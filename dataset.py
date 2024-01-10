@@ -26,22 +26,30 @@ def find_classes(dir):
     return classes, class_to_idx
 
 
-def make_dataset(dir, extensions):
+def make_dataset(dir, mode, extensions):
     images = []
-    for root, _, fnames in sorted(os.walk(dir)):
-        for fname in sorted(fnames):
-            if has_file_allowed_extension(fname, extensions):
-                path = os.path.join(root, fname)
-                item = (path, 0)
-                images.append(item)
+    # for root, _, fnames in sorted(os.walk(dir)):
+    #     for fname in sorted(fnames):
+    #         if has_file_allowed_extension(fname, extensions):
+    #             path = os.path.join(root, fname)
+    #             item = (path, 0)
+    #             images.append(item)
+
+    txt_file = dir[mode]
+    with open(txt_file, 'r') as fa:
+        fnames = fa.readlines()
+        for path in fnames:
+            item = (path.strip(), 0)
+            images.append(item)
 
     return images
 
 
 class DatasetFolder(data.Dataset):
-    def __init__(self, root, loader, extensions, transform=None, target_transform=None):
+    def __init__(self, root, mode, loader, extensions, transform=None, target_transform=None):
         # classes, class_to_idx = find_classes(root)
-        samples = make_dataset(root, extensions)
+        samples = make_dataset(root, mode, extensions)
+        print(mode + ' datasets total num: ', len(samples))
         if len(samples) == 0:
             raise(RuntimeError("Found 0 files in subfolders of: " + root + "\n"
                                "Supported extensions are: " + ",".join(extensions)))
@@ -100,9 +108,9 @@ def default_loader(path):
 
 
 class ImageFolder(DatasetFolder):
-    def __init__(self, root, transform=None, target_transform=None,
+    def __init__(self, root, mode, transform=None, target_transform=None,
                  loader=default_loader):
-        super(ImageFolder, self).__init__(root, loader, IMG_EXTENSIONS,
+        super(ImageFolder, self).__init__(root, mode, loader, IMG_EXTENSIONS,
                                           transform=transform,
                                           target_transform=target_transform)
         self.imgs = self.samples

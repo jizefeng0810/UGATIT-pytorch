@@ -2,6 +2,8 @@ from UGATIT import UGATIT
 import argparse
 from utils import *
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # 设置为0表示使用第一个GPU
+
 """parsing and configuration"""
 
 def parse_args():
@@ -9,7 +11,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument('--phase', type=str, default='train', help='[train / test]')
     parser.add_argument('--light', type=str2bool, default=False, help='[U-GAT-IT full version / U-GAT-IT light version]')
-    parser.add_argument('--dataset', type=str, default='YOUR_DATASET_NAME', help='dataset_name')
+    parser.add_argument('--exp_name', type=str, default='YOUR_DATASET_NAME', help='dataset_name')
 
     parser.add_argument('--iteration', type=int, default=1000000, help='The number of training iterations')
     parser.add_argument('--batch_size', type=int, default=1, help='The size of batch size')
@@ -28,7 +30,7 @@ def parse_args():
     parser.add_argument('--n_res', type=int, default=4, help='The number of resblock')
     parser.add_argument('--n_dis', type=int, default=6, help='The number of discriminator layer')
 
-    parser.add_argument('--img_size', type=int, default=256, help='The size of image')
+    parser.add_argument('--img_size', type=int, default=128, help='The size of image')
     parser.add_argument('--img_ch', type=int, default=3, help='The size of image channel')
 
     parser.add_argument('--result_dir', type=str, default='results', help='Directory name to save the results')
@@ -41,9 +43,9 @@ def parse_args():
 """checking arguments"""
 def check_args(args):
     # --result_dir
-    check_folder(os.path.join(args.result_dir, args.dataset, 'model'))
-    check_folder(os.path.join(args.result_dir, args.dataset, 'img'))
-    check_folder(os.path.join(args.result_dir, args.dataset, 'test'))
+    check_folder(os.path.join(args.result_dir, args.exp_name, 'model'))
+    check_folder(os.path.join(args.result_dir, args.exp_name, 'img'))
+    check_folder(os.path.join(args.result_dir, args.exp_name, 'test'))
 
     # --epoch
     try:
@@ -56,6 +58,14 @@ def check_args(args):
         assert args.batch_size >= 1
     except:
         print('batch size must be larger than or equal to one')
+    
+    args.dataset = {
+        'trainA': './dataset/ffhq&ffhqr/ffhq_train.txt',
+        'trainB': './dataset/ffhq&ffhqr/ffhqr_train.txt',
+        'testA': './dataset/ffhq&ffhqr/ffhq_test.txt',
+        'testB': './dataset/ffhq&ffhqr/ffhqr_test.txt'
+    }
+    print(args)
     return args
 
 """main"""

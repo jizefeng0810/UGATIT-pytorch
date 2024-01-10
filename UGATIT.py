@@ -17,6 +17,7 @@ class UGATIT(object) :
 
         self.result_dir = args.result_dir
         self.dataset = args.dataset
+        self.exp_name = args.exp_name
 
         self.iteration = args.iteration
         self.decay_flag = args.decay_flag
@@ -97,10 +98,10 @@ class UGATIT(object) :
             transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
         ])
 
-        self.trainA = ImageFolder(os.path.join('dataset', self.dataset, 'trainA'), train_transform)
-        self.trainB = ImageFolder(os.path.join('dataset', self.dataset, 'trainB'), train_transform)
-        self.testA = ImageFolder(os.path.join('dataset', self.dataset, 'testA'), test_transform)
-        self.testB = ImageFolder(os.path.join('dataset', self.dataset, 'testB'), test_transform)
+        self.trainA = ImageFolder(self.dataset, 'trainA', train_transform)
+        self.trainB = ImageFolder(self.dataset, 'trainB', train_transform)
+        self.testA = ImageFolder(self.dataset, 'testA', test_transform)
+        self.testB = ImageFolder(self.dataset, 'testB', test_transform)
         self.trainA_loader = DataLoader(self.trainA, batch_size=self.batch_size, shuffle=True)
         self.trainB_loader = DataLoader(self.trainB, batch_size=self.batch_size, shuffle=True)
         self.testA_loader = DataLoader(self.testA, batch_size=1, shuffle=False)
@@ -131,11 +132,11 @@ class UGATIT(object) :
 
         start_iter = 1
         if self.resume:
-            model_list = glob(os.path.join(self.result_dir, self.dataset, 'model', '*.pt'))
+            model_list = glob(os.path.join(self.result_dir, self.exp_name, 'model', '*.pt'))
             if not len(model_list) == 0:
                 model_list.sort()
                 start_iter = int(model_list[-1].split('_')[-1].split('.')[0])
-                self.load(os.path.join(self.result_dir, self.dataset, 'model'), start_iter)
+                self.load(os.path.join(self.result_dir, self.exp_name, 'model'), start_iter)
                 print(" [*] Load SUCCESS")
                 if self.decay_flag and start_iter > (self.iteration // 2):
                     self.G_optim.param_groups[0]['lr'] -= (self.lr / (self.iteration // 2)) * (start_iter - self.iteration // 2)
@@ -327,12 +328,12 @@ class UGATIT(object) :
                                                                cam(tensor2numpy(fake_B2A2B_heatmap[0]), self.img_size),
                                                                RGB2BGR(tensor2numpy(denorm(fake_B2A2B[0])))), 0)), 1)
 
-                cv2.imwrite(os.path.join(self.result_dir, self.dataset, 'img', 'A2B_%07d.png' % step), A2B * 255.0)
-                cv2.imwrite(os.path.join(self.result_dir, self.dataset, 'img', 'B2A_%07d.png' % step), B2A * 255.0)
+                cv2.imwrite(os.path.join(self.result_dir, self.exp_name, 'img', 'A2B_%07d.png' % step), A2B * 255.0)
+                cv2.imwrite(os.path.join(self.result_dir, self.exp_name, 'img', 'B2A_%07d.png' % step), B2A * 255.0)
                 self.genA2B.train(), self.genB2A.train(), self.disGA.train(), self.disGB.train(), self.disLA.train(), self.disLB.train()
 
             if step % self.save_freq == 0:
-                self.save(os.path.join(self.result_dir, self.dataset, 'model'), step)
+                self.save(os.path.join(self.result_dir, self.exp_name, 'model'), step)
 
             if step % 1000 == 0:
                 params = {}
@@ -342,7 +343,7 @@ class UGATIT(object) :
                 params['disGB'] = self.disGB.state_dict()
                 params['disLA'] = self.disLA.state_dict()
                 params['disLB'] = self.disLB.state_dict()
-                torch.save(params, os.path.join(self.result_dir, self.dataset + '_params_latest.pt'))
+                torch.save(params, os.path.join(self.result_dir, self.exp_name + '_params_latest.pt'))
 
     def save(self, dir, step):
         params = {}
@@ -352,10 +353,10 @@ class UGATIT(object) :
         params['disGB'] = self.disGB.state_dict()
         params['disLA'] = self.disLA.state_dict()
         params['disLB'] = self.disLB.state_dict()
-        torch.save(params, os.path.join(dir, self.dataset + '_params_%07d.pt' % step))
+        torch.save(params, os.path.join(dir, self.exp_name + '_params_%07d.pt' % step))
 
     def load(self, dir, step):
-        params = torch.load(os.path.join(dir, self.dataset + '_params_%07d.pt' % step))
+        params = torch.load(os.path.join(dir, self.exp_name + '_params_%07d.pt' % step))
         self.genA2B.load_state_dict(params['genA2B'])
         self.genB2A.load_state_dict(params['genB2A'])
         self.disGA.load_state_dict(params['disGA'])
@@ -364,11 +365,11 @@ class UGATIT(object) :
         self.disLB.load_state_dict(params['disLB'])
 
     def test(self):
-        model_list = glob(os.path.join(self.result_dir, self.dataset, 'model', '*.pt'))
+        model_list = glob(os.path.join(self.result_dir, self.exp_name, 'model', '*.pt'))
         if not len(model_list) == 0:
             model_list.sort()
             iter = int(model_list[-1].split('_')[-1].split('.')[0])
-            self.load(os.path.join(self.result_dir, self.dataset, 'model'), iter)
+            self.load(os.path.join(self.result_dir, self.exp_name, 'model'), iter)
             print(" [*] Load SUCCESS")
         else:
             print(" [*] Load FAILURE")
@@ -392,7 +393,7 @@ class UGATIT(object) :
                                   cam(tensor2numpy(fake_A2B2A_heatmap[0]), self.img_size),
                                   RGB2BGR(tensor2numpy(denorm(fake_A2B2A[0])))), 0)
 
-            cv2.imwrite(os.path.join(self.result_dir, self.dataset, 'test', 'A2B_%d.png' % (n + 1)), A2B * 255.0)
+            cv2.imwrite(os.path.join(self.result_dir, self.exp_name, 'test', 'A2B_%d.png' % (n + 1)), A2B * 255.0)
 
         for n, (real_B, _) in enumerate(self.testB_loader):
             real_B = real_B.to(self.device)
@@ -411,4 +412,4 @@ class UGATIT(object) :
                                   cam(tensor2numpy(fake_B2A2B_heatmap[0]), self.img_size),
                                   RGB2BGR(tensor2numpy(denorm(fake_B2A2B[0])))), 0)
 
-            cv2.imwrite(os.path.join(self.result_dir, self.dataset, 'test', 'B2A_%d.png' % (n + 1)), B2A * 255.0)
+            cv2.imwrite(os.path.join(self.result_dir, self.exp_name, 'test', 'B2A_%d.png' % (n + 1)), B2A * 255.0)
