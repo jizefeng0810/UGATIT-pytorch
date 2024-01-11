@@ -62,5 +62,9 @@ def denorm(x):
 def tensor2numpy(x):
     return x.detach().cpu().numpy().transpose(1,2,0)
 
-def RGB2BGR(x):
-    return cv2.cvtColor(x, cv2.COLOR_RGB2BGR)
+def RGB2BGR(x, label = "", imgsize = 256):
+    img = cv2.cvtColor(x, cv2.COLOR_RGB2BGR)
+    fontscale = imgsize / 256.
+    if label != "":
+        cv2.putText(img, label, org=(5,30), fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=fontscale, color=(0,0,255))
+    return img

@@ -2,10 +2,16 @@ from UGATIT import UGATIT
 import argparse
 from utils import *
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # 设置为0表示使用第一个GPU
+# os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # 设置为0表示使用第一个GPU
+
+"""
+CUDA_VISIBLE_DEVICES=2  python main.py --exp_name test --print_freq 10 --save_freq 100 --batch_size 2
+CUDA_VISIBLE_DEVICES=2,3  python -m torch.distributed.launch --nproc_per_node=2 main.py --exp_name test --print_freq 10 --save_freq 100
+
+CUDA_VISIBLE_DEVICES=1  python main.py --exp_name ffhqr128 --print_freq 1000 --save_freq 100000 --batch_size 2
+"""
 
 """parsing and configuration"""
-
 def parse_args():
     desc = "Pytorch implementation of U-GAT-IT"
     parser = argparse.ArgumentParser(description=desc)
@@ -37,6 +43,12 @@ def parse_args():
     parser.add_argument('--device', type=str, default='cuda', choices=['cpu', 'cuda'], help='Set gpu mode; [cpu, cuda]')
     parser.add_argument('--benchmark_flag', type=str2bool, default=False)
     parser.add_argument('--resume', type=str2bool, default=False)
+
+    # 通过 torch.distributed.launch开启dp
+    parser.add_argument('--distributed', type=str2bool, default=False, help='ddp train')
+    parser.add_argument('--num_worker', type=int, default=4, help='The number of worker')
+    #不需要赋值，启动命令 torch.distributed.launch会自动赋值
+    parser.add_argument("--local_rank", type=int, default=-1, help="local rank for distributed training")
 
     return check_args(parser.parse_args())
 
