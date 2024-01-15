@@ -1,14 +1,16 @@
 from UGATIT import UGATIT
 import argparse
 from utils import *
+import sys
 
 # os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # 设置为0表示使用第一个GPU
 
 """
-CUDA_VISIBLE_DEVICES=2  python main.py --exp_name test --print_freq 10 --save_freq 100 --batch_size 2
-CUDA_VISIBLE_DEVICES=2,3  python -m torch.distributed.launch --nproc_per_node=2 main.py --exp_name test --print_freq 10 --save_freq 100
+CUDA_VISIBLE_DEVICES=2  python main.py --exp_name test --print_freq 10 --save_freq 100 --batch_size 2 --model UNet
+CUDA_VISIBLE_DEVICES=2,3  python -m torch.distributed.launch --nproc_per_node=2 main.py --exp_name test --print_freq 10 --save_freq 100 --model UNet
 
-CUDA_VISIBLE_DEVICES=1  python main.py --exp_name ffhqr128 --print_freq 1000 --save_freq 100000 --batch_size 2
+CUDA_VISIBLE_DEVICES=1  python main.py --exp_name ffhqr128 --print_freq 1000 --save_freq 100000 --batch_size 2 --model UGATIT
+CUDA_VISIBLE_DEVICES=2  python -u main.py --exp_name ffhqr128 --print_freq 1000 --save_freq 100000 --batch_size 8 --model UNet  2>&1 | tee -a results/result_ffhqr128_UNet.txt
 """
 
 """parsing and configuration"""
@@ -19,6 +21,7 @@ def parse_args():
     parser.add_argument('--light', type=str2bool, default=False, help='[U-GAT-IT full version / U-GAT-IT light version]')
     parser.add_argument('--exp_name', type=str, default='YOUR_DATASET_NAME', help='dataset_name')
 
+    parser.add_argument('--model', type=str, default='UGATIT', help='model_name: UGATIT/UNet/...')
     parser.add_argument('--iteration', type=int, default=1000000, help='The number of training iterations')
     parser.add_argument('--batch_size', type=int, default=1, help='The size of batch size')
     parser.add_argument('--print_freq', type=int, default=1000, help='The number of image print freq')
@@ -54,10 +57,15 @@ def parse_args():
 
 """checking arguments"""
 def check_args(args):
+    # --model
+    if args.model not in ['UGATIT', 'UNet']:
+        print('Error: model_name is not exist!')
+        assert 0
+
     # --result_dir
-    check_folder(os.path.join(args.result_dir, args.exp_name, 'model'))
-    check_folder(os.path.join(args.result_dir, args.exp_name, 'img'))
-    check_folder(os.path.join(args.result_dir, args.exp_name, 'test'))
+    check_folder(os.path.join(args.result_dir, args.exp_name + '_' + args.model, 'model'))
+    check_folder(os.path.join(args.result_dir, args.exp_name + '_' + args.model, 'img'))
+    check_folder(os.path.join(args.result_dir, args.exp_name + '_' + args.model, 'test'))
 
     # --epoch
     try:
@@ -82,6 +90,9 @@ def check_args(args):
 
 """main"""
 def main():
+    # 获取命令行参数
+    command_line = ' '.join(sys.argv)
+    print(f"Command line: {command_line}")
     # parse arguments
     args = parse_args()
     if args is None:

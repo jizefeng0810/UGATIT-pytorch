@@ -1,6 +1,24 @@
 import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
+from models.unet import *
+class Generator(nn.Module):
+    def __init__(self, capacity='230g', in_w=256, in_h=256, in_c=3, base_num=2, type='m0.25'):
+        super(Generator, self).__init__()
+        if type == 'unet':
+            self.model = UNet(n_channels=in_c, n_classes=3)
+        # elif type == 'res50':
+        #     self.model = resnet50(num_classes=base_num, in_w=in_w, in_h=in_h, in_c=in_c) # 5091M  废弃
+        # elif type == 'res18':
+        #     self.model = resnet18(num_classes=base_num, in_w=in_w, in_h=in_h, in_c=in_c) # 2259M  废弃
+        # elif type == 'm1':
+        #     self.model = mobilenet_v2(num_classes=base_num, in_w=in_w, in_h=in_h, in_c=in_c, width_mult=1.0) # 384M  197M
+        # else:
+        #     self.model = mobilenet_v2(num_classes=base_num, in_w=in_w, in_h=in_h, in_c=in_c, width_mult=0.25) # 38M  50M
+        
+    def forward(self, x):
+        out = self.model(x)
+        return out
 
 
 class ResnetGenerator(nn.Module):

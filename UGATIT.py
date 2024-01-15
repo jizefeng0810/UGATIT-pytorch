@@ -11,16 +11,20 @@ import torch.distributed as dist
 
 class UGATIT(object) :
     def __init__(self, args):
-        self.light = args.light
+        self.light = False
+        if args.model == 'UGATIT':
+            self.light = args.light
 
-        if self.light :
-            self.model_name = 'UGATIT_light'
-        else :
-            self.model_name = 'UGATIT'
+            if self.light :
+                self.model_name = 'UGATIT_light'
+            else :
+                self.model_name = 'UGATIT'
+        else:
+            self.model_name = args.model
 
         self.result_dir = args.result_dir
         self.dataset = args.dataset
-        self.exp_name = args.exp_name
+        self.exp_name = args.exp_name + '_' + self.model_name
 
         self.iteration = args.iteration
         self.decay_flag = args.decay_flag
@@ -129,8 +133,13 @@ class UGATIT(object) :
         self.testB_loader = DataLoader(self.testB, batch_size=1, shuffle=False)
 
         """ Define Generator, Discriminator """
-        self.genA2B = ResnetGenerator(input_nc=3, output_nc=3, ngf=self.ch, n_blocks=self.n_res, img_size=self.img_size, light=self.light).to(self.device)
-        self.genB2A = ResnetGenerator(input_nc=3, output_nc=3, ngf=self.ch, n_blocks=self.n_res, img_size=self.img_size, light=self.light).to(self.device)
+        if self.model_name == 'UGATIT' or self.model_name == 'UGATIT_light':
+            self.genA2B = ResnetGenerator(input_nc=3, output_nc=3, ngf=self.ch, n_blocks=self.n_res, img_size=self.img_size, light=self.light).to(self.device)
+            self.genB2A = ResnetGenerator(input_nc=3, output_nc=3, ngf=self.ch, n_blocks=self.n_res, img_size=self.img_size, light=self.light).to(self.device)
+        elif self.model_name == 'UNet':
+            self.genA2B = Generator(in_c=3, type='unet').to(self.device)
+            self.genB2A = Generator(in_c=3, type='unet').to(self.device)
+        
         self.disGA = Discriminator(input_nc=3, ndf=self.ch, n_layers=7).to(self.device)
         self.disGB = Discriminator(input_nc=3, ndf=self.ch, n_layers=7).to(self.device)
         self.disLA = Discriminator(input_nc=3, ndf=self.ch, n_layers=5).to(self.device)
@@ -199,8 +208,12 @@ class UGATIT(object) :
             # Update D
             self.D_optim.zero_grad()
 
-            fake_A2B, _, _ = self.genA2B(real_A)
-            fake_B2A, _, _ = self.genB2A(real_B)
+            if self.model_name == 'UGATIT' or self.model_name == 'UGATIT_light':
+                fake_A2B, _, _ = self.genA2B(real_A)
+                fake_B2A, _, _ = self.genB2A(real_B)
+            elif self.model_name == 'UNet':
+                fake_A2B = self.genA2B(real_A)
+                fake_B2A = self.genB2A(real_B)
 
             real_GA_logit, real_GA_cam_logit, _ = self.disGA(real_A)
             real_LA_logit, real_LA_cam_logit, _ = self.disLA(real_A)
@@ -231,14 +244,24 @@ class UGATIT(object) :
             # Update G
             self.G_optim.zero_grad()
 
-            fake_A2B, fake_A2B_cam_logit, _ = self.genA2B(real_A)
-            fake_B2A, fake_B2A_cam_logit, _ = self.genB2A(real_B)
+            if self.model_name == 'UGATIT' or self.model_name == 'UGATIT_light':
+                fake_A2B, fake_A2B_cam_logit, _ = self.genA2B(real_A)
+                fake_B2A, fake_B2A_cam_logit, _ = self.genB2A(real_B)
 
-            fake_A2B2A, _, _ = self.genB2A(fake_A2B)
-            fake_B2A2B, _, _ = self.genA2B(fake_B2A)
+                fake_A2B2A, _, _ = self.genB2A(fake_A2B)
+                fake_B2A2B, _, _ = self.genA2B(fake_B2A)
 
-            fake_A2A, fake_A2A_cam_logit, _ = self.genB2A(real_A)
-            fake_B2B, fake_B2B_cam_logit, _ = self.genA2B(real_B)
+                fake_A2A, fake_A2A_cam_logit, _ = self.genB2A(real_A)
+                fake_B2B, fake_B2B_cam_logit, _ = self.genA2B(real_B)
+            elif self.model_name == 'UNet':
+                fake_A2B = self.genA2B(real_A)
+                fake_B2A = self.genB2A(real_B)
+
+                fake_A2B2A = self.genB2A(fake_A2B)
+                fake_B2A2B = self.genA2B(fake_B2A)
+
+                fake_A2A = self.genB2A(real_A)
+                fake_B2B = self.genA2B(real_B)
 
             fake_GA_logit, fake_GA_cam_logit, _ = self.disGA(fake_B2A)
             fake_LA_logit, fake_LA_cam_logit, _ = self.disLA(fake_B2A)
@@ -260,11 +283,16 @@ class UGATIT(object) :
             G_identity_loss_A = self.L1_loss(fake_A2A, real_A)
             G_identity_loss_B = self.L1_loss(fake_B2B, real_B)
 
-            G_cam_loss_A = self.BCE_loss(fake_B2A_cam_logit, torch.ones_like(fake_B2A_cam_logit).to(self.device)) + self.BCE_loss(fake_A2A_cam_logit, torch.zeros_like(fake_A2A_cam_logit).to(self.device))
-            G_cam_loss_B = self.BCE_loss(fake_A2B_cam_logit, torch.ones_like(fake_A2B_cam_logit).to(self.device)) + self.BCE_loss(fake_B2B_cam_logit, torch.zeros_like(fake_B2B_cam_logit).to(self.device))
+            if self.model_name == 'UGATIT' or self.model_name == 'UGATIT_light':
+                G_cam_loss_A = self.BCE_loss(fake_B2A_cam_logit, torch.ones_like(fake_B2A_cam_logit).to(self.device)) + self.BCE_loss(fake_A2A_cam_logit, torch.zeros_like(fake_A2A_cam_logit).to(self.device))
+                G_cam_loss_B = self.BCE_loss(fake_A2B_cam_logit, torch.ones_like(fake_A2B_cam_logit).to(self.device)) + self.BCE_loss(fake_B2B_cam_logit, torch.zeros_like(fake_B2B_cam_logit).to(self.device))
 
-            G_loss_A =  self.adv_weight * (G_ad_loss_GA + G_ad_cam_loss_GA + G_ad_loss_LA + G_ad_cam_loss_LA) + self.cycle_weight * G_recon_loss_A + self.identity_weight * G_identity_loss_A + self.cam_weight * G_cam_loss_A
-            G_loss_B = self.adv_weight * (G_ad_loss_GB + G_ad_cam_loss_GB + G_ad_loss_LB + G_ad_cam_loss_LB) + self.cycle_weight * G_recon_loss_B + self.identity_weight * G_identity_loss_B + self.cam_weight * G_cam_loss_B
+            if self.model_name == 'UGATIT' or self.model_name == 'UGATIT_light':
+                G_loss_A =  self.adv_weight * (G_ad_loss_GA + G_ad_cam_loss_GA + G_ad_loss_LA + G_ad_cam_loss_LA) + self.cycle_weight * G_recon_loss_A + self.identity_weight * G_identity_loss_A + self.cam_weight * G_cam_loss_A
+                G_loss_B = self.adv_weight * (G_ad_loss_GB + G_ad_cam_loss_GB + G_ad_loss_LB + G_ad_cam_loss_LB) + self.cycle_weight * G_recon_loss_B + self.identity_weight * G_identity_loss_B + self.cam_weight * G_cam_loss_B
+            elif self.model_name == 'UNet':
+                G_loss_A =  self.adv_weight * (G_ad_loss_GA + G_ad_cam_loss_GA + G_ad_loss_LA + G_ad_cam_loss_LA) + self.cycle_weight * G_recon_loss_A + self.identity_weight * G_identity_loss_A
+                G_loss_B = self.adv_weight * (G_ad_loss_GB + G_ad_cam_loss_GB + G_ad_loss_LB + G_ad_cam_loss_LB) + self.cycle_weight * G_recon_loss_B + self.identity_weight * G_identity_loss_B
 
             Generator_loss = G_loss_A + G_loss_B
             Generator_loss.backward()
@@ -280,8 +308,12 @@ class UGATIT(object) :
                 if step % self.print_freq == 0:
                     train_sample_num = 5
                     test_sample_num = 5
-                    A2B = np.zeros((self.img_size * 7, 0, 3))
-                    B2A = np.zeros((self.img_size * 7, 0, 3))
+                    if self.model_name == 'UGATIT' or self.model_name == 'UGATIT_light':
+                        A2B = np.zeros((self.img_size * 7, 0, 3))
+                        B2A = np.zeros((self.img_size * 7, 0, 3))
+                    elif self.model_name == 'UNet':
+                        A2B = np.zeros((self.img_size * 4, 0, 3))
+                        B2A = np.zeros((self.img_size * 4, 0, 3))
 
                     self.genA2B.eval(), self.genB2A.eval(), self.disGA.eval(), self.disGB.eval(), self.disLA.eval(), self.disLB.eval()
                     for _ in range(train_sample_num):
@@ -298,30 +330,50 @@ class UGATIT(object) :
                             real_B, _ = trainB_iter.next()
                         real_A, real_B = real_A.to(self.device), real_B.to(self.device)
 
-                        fake_A2B, _, fake_A2B_heatmap = self.genA2B(real_A)
-                        fake_B2A, _, fake_B2A_heatmap = self.genB2A(real_B)
+                        if self.model_name == 'UGATIT' or self.model_name == 'UGATIT_light':
+                            fake_A2B, _, fake_A2B_heatmap = self.genA2B(real_A)
+                            fake_B2A, _, fake_B2A_heatmap = self.genB2A(real_B)
 
-                        fake_A2B2A, _, fake_A2B2A_heatmap = self.genB2A(fake_A2B)
-                        fake_B2A2B, _, fake_B2A2B_heatmap = self.genA2B(fake_B2A)
+                            fake_A2B2A, _, fake_A2B2A_heatmap = self.genB2A(fake_A2B)
+                            fake_B2A2B, _, fake_B2A2B_heatmap = self.genA2B(fake_B2A)
 
-                        fake_A2A, _, fake_A2A_heatmap = self.genB2A(real_A)
-                        fake_B2B, _, fake_B2B_heatmap = self.genA2B(real_B)
+                            fake_A2A, _, fake_A2A_heatmap = self.genB2A(real_A)
+                            fake_B2B, _, fake_B2B_heatmap = self.genA2B(real_B)
 
-                        A2B = np.concatenate((A2B,  np.concatenate((RGB2BGR(tensor2numpy(denorm(real_A[0])), 'A2A', self.img_size),
-                                                                    cam(tensor2numpy(fake_A2A_heatmap[0]), self.img_size),
-                                                                    RGB2BGR(tensor2numpy(denorm(fake_A2A[0])), 'fake_A2A', self.img_size),
-                                                                    cam(tensor2numpy(fake_A2B_heatmap[0]), self.img_size),
-                                                                    RGB2BGR(tensor2numpy(denorm(fake_A2B[0])), 'fake_A2B', self.img_size),
-                                                                    cam(tensor2numpy(fake_A2B2A_heatmap[0]), self.img_size),
-                                                                    RGB2BGR(tensor2numpy(denorm(fake_A2B2A[0])), 'fake_A2B2A', self.img_size)), 0)), 1)
+                            A2B = np.concatenate((A2B,  np.concatenate((RGB2BGR(tensor2numpy(denorm(real_A[0])), 'A2A', self.img_size),
+                                                                        cam(tensor2numpy(fake_A2A_heatmap[0]), self.img_size),
+                                                                        RGB2BGR(tensor2numpy(denorm(fake_A2A[0])), 'fake_A2A', self.img_size),
+                                                                        cam(tensor2numpy(fake_A2B_heatmap[0]), self.img_size),
+                                                                        RGB2BGR(tensor2numpy(denorm(fake_A2B[0])), 'fake_A2B', self.img_size),
+                                                                        cam(tensor2numpy(fake_A2B2A_heatmap[0]), self.img_size),
+                                                                        RGB2BGR(tensor2numpy(denorm(fake_A2B2A[0])), 'fake_A2B2A', self.img_size)), 0)), 1)
 
-                        B2A = np.concatenate((B2A, np.concatenate((RGB2BGR(tensor2numpy(denorm(real_B[0])), 'real_B', self.img_size),
-                                                                cam(tensor2numpy(fake_B2B_heatmap[0]), self.img_size),
-                                                                RGB2BGR(tensor2numpy(denorm(fake_B2B[0])), 'fake_B2B', self.img_size),
-                                                                cam(tensor2numpy(fake_B2A_heatmap[0]), self.img_size),
-                                                                RGB2BGR(tensor2numpy(denorm(fake_B2A[0])), 'fake_B2A', self.img_size),
-                                                                cam(tensor2numpy(fake_B2A2B_heatmap[0]), self.img_size),
-                                                                RGB2BGR(tensor2numpy(denorm(fake_B2A2B[0])), 'fake_B2A2B', self.img_size)), 0)), 1)
+                            B2A = np.concatenate((B2A, np.concatenate((RGB2BGR(tensor2numpy(denorm(real_B[0])), 'real_B', self.img_size),
+                                                                    cam(tensor2numpy(fake_B2B_heatmap[0]), self.img_size),
+                                                                    RGB2BGR(tensor2numpy(denorm(fake_B2B[0])), 'fake_B2B', self.img_size),
+                                                                    cam(tensor2numpy(fake_B2A_heatmap[0]), self.img_size),
+                                                                    RGB2BGR(tensor2numpy(denorm(fake_B2A[0])), 'fake_B2A', self.img_size),
+                                                                    cam(tensor2numpy(fake_B2A2B_heatmap[0]), self.img_size),
+                                                                    RGB2BGR(tensor2numpy(denorm(fake_B2A2B[0])), 'fake_B2A2B', self.img_size)), 0)), 1)
+                        elif self.model_name == 'UNet':
+                            fake_A2B = self.genA2B(real_A)
+                            fake_B2A = self.genB2A(real_B)
+
+                            fake_A2B2A = self.genB2A(fake_A2B)
+                            fake_B2A2B = self.genA2B(fake_B2A)
+
+                            fake_A2A = self.genB2A(real_A)
+                            fake_B2B = self.genA2B(real_B)
+
+                            A2B = np.concatenate((A2B,  np.concatenate((RGB2BGR(tensor2numpy(denorm(real_A[0])), 'A2A', self.img_size),
+                                                                        RGB2BGR(tensor2numpy(denorm(fake_A2A[0])), 'fake_A2A', self.img_size),
+                                                                        RGB2BGR(tensor2numpy(denorm(fake_A2B[0])), 'fake_A2B', self.img_size),
+                                                                        RGB2BGR(tensor2numpy(denorm(fake_A2B2A[0])), 'fake_A2B2A', self.img_size)), 0)), 1)
+
+                            B2A = np.concatenate((B2A, np.concatenate((RGB2BGR(tensor2numpy(denorm(real_B[0])), 'real_B', self.img_size),
+                                                                    RGB2BGR(tensor2numpy(denorm(fake_B2B[0])), 'fake_B2B', self.img_size),
+                                                                    RGB2BGR(tensor2numpy(denorm(fake_B2A[0])), 'fake_B2A', self.img_size),
+                                                                    RGB2BGR(tensor2numpy(denorm(fake_B2A2B[0])), 'fake_B2A2B', self.img_size)), 0)), 1)
 
                     for _ in range(test_sample_num):
                         try:
@@ -337,30 +389,50 @@ class UGATIT(object) :
                             real_B, _ = testB_iter.next()
                         real_A, real_B = real_A.to(self.device), real_B.to(self.device)
 
-                        fake_A2B, _, fake_A2B_heatmap = self.genA2B(real_A)
-                        fake_B2A, _, fake_B2A_heatmap = self.genB2A(real_B)
+                        if self.model_name == 'UGATIT' or self.model_name == 'UGATIT_light':
+                            fake_A2B, _, fake_A2B_heatmap = self.genA2B(real_A)
+                            fake_B2A, _, fake_B2A_heatmap = self.genB2A(real_B)
 
-                        fake_A2B2A, _, fake_A2B2A_heatmap = self.genB2A(fake_A2B)
-                        fake_B2A2B, _, fake_B2A2B_heatmap = self.genA2B(fake_B2A)
+                            fake_A2B2A, _, fake_A2B2A_heatmap = self.genB2A(fake_A2B)
+                            fake_B2A2B, _, fake_B2A2B_heatmap = self.genA2B(fake_B2A)
 
-                        fake_A2A, _, fake_A2A_heatmap = self.genB2A(real_A)
-                        fake_B2B, _, fake_B2B_heatmap = self.genA2B(real_B)
+                            fake_A2A, _, fake_A2A_heatmap = self.genB2A(real_A)
+                            fake_B2B, _, fake_B2B_heatmap = self.genA2B(real_B)
 
-                        A2B = np.concatenate((A2B, np.concatenate((RGB2BGR(tensor2numpy(denorm(real_A[0])), 'real_A', self.img_size),
-                                                                cam(tensor2numpy(fake_A2A_heatmap[0]), self.img_size),
-                                                                RGB2BGR(tensor2numpy(denorm(fake_A2A[0])), 'fake_A2A', self.img_size),
-                                                                cam(tensor2numpy(fake_A2B_heatmap[0]), self.img_size),
-                                                                RGB2BGR(tensor2numpy(denorm(fake_A2B[0])), 'fake_A2B', self.img_size),
-                                                                cam(tensor2numpy(fake_A2B2A_heatmap[0]), self.img_size),
-                                                                RGB2BGR(tensor2numpy(denorm(fake_A2B2A[0])), 'fake_A2B2A', self.img_size)), 0)), 1)
+                            A2B = np.concatenate((A2B, np.concatenate((RGB2BGR(tensor2numpy(denorm(real_A[0])), 'real_A', self.img_size),
+                                                                    cam(tensor2numpy(fake_A2A_heatmap[0]), self.img_size),
+                                                                    RGB2BGR(tensor2numpy(denorm(fake_A2A[0])), 'fake_A2A', self.img_size),
+                                                                    cam(tensor2numpy(fake_A2B_heatmap[0]), self.img_size),
+                                                                    RGB2BGR(tensor2numpy(denorm(fake_A2B[0])), 'fake_A2B', self.img_size),
+                                                                    cam(tensor2numpy(fake_A2B2A_heatmap[0]), self.img_size),
+                                                                    RGB2BGR(tensor2numpy(denorm(fake_A2B2A[0])), 'fake_A2B2A', self.img_size)), 0)), 1)
 
-                        B2A = np.concatenate((B2A, np.concatenate((RGB2BGR(tensor2numpy(denorm(real_B[0])), 'real_B', self.img_size),
-                                                                cam(tensor2numpy(fake_B2B_heatmap[0]), self.img_size),
-                                                                RGB2BGR(tensor2numpy(denorm(fake_B2B[0])), 'fake_B2B', self.img_size),
-                                                                cam(tensor2numpy(fake_B2A_heatmap[0]), self.img_size),
-                                                                RGB2BGR(tensor2numpy(denorm(fake_B2A[0])), 'fake_B2A', self.img_size),
-                                                                cam(tensor2numpy(fake_B2A2B_heatmap[0]), self.img_size),
-                                                                RGB2BGR(tensor2numpy(denorm(fake_B2A2B[0])), 'fake_B2A2B', self.img_size)), 0)), 1)
+                            B2A = np.concatenate((B2A, np.concatenate((RGB2BGR(tensor2numpy(denorm(real_B[0])), 'real_B', self.img_size),
+                                                                    cam(tensor2numpy(fake_B2B_heatmap[0]), self.img_size),
+                                                                    RGB2BGR(tensor2numpy(denorm(fake_B2B[0])), 'fake_B2B', self.img_size),
+                                                                    cam(tensor2numpy(fake_B2A_heatmap[0]), self.img_size),
+                                                                    RGB2BGR(tensor2numpy(denorm(fake_B2A[0])), 'fake_B2A', self.img_size),
+                                                                    cam(tensor2numpy(fake_B2A2B_heatmap[0]), self.img_size),
+                                                                    RGB2BGR(tensor2numpy(denorm(fake_B2A2B[0])), 'fake_B2A2B', self.img_size)), 0)), 1)
+                        elif self.model_name == 'UNet':
+                            fake_A2B = self.genA2B(real_A)
+                            fake_B2A = self.genB2A(real_B)
+
+                            fake_A2B2A = self.genB2A(fake_A2B)
+                            fake_B2A2B = self.genA2B(fake_B2A)
+
+                            fake_A2A = self.genB2A(real_A)
+                            fake_B2B = self.genA2B(real_B)
+
+                            A2B = np.concatenate((A2B, np.concatenate((RGB2BGR(tensor2numpy(denorm(real_A[0])), 'real_A', self.img_size),
+                                                                    RGB2BGR(tensor2numpy(denorm(fake_A2A[0])), 'fake_A2A', self.img_size),
+                                                                    RGB2BGR(tensor2numpy(denorm(fake_A2B[0])), 'fake_A2B', self.img_size),
+                                                                    RGB2BGR(tensor2numpy(denorm(fake_A2B2A[0])), 'fake_A2B2A', self.img_size)), 0)), 1)
+
+                            B2A = np.concatenate((B2A, np.concatenate((RGB2BGR(tensor2numpy(denorm(real_B[0])), 'real_B', self.img_size),
+                                                                    RGB2BGR(tensor2numpy(denorm(fake_B2B[0])), 'fake_B2B', self.img_size),
+                                                                    RGB2BGR(tensor2numpy(denorm(fake_B2A[0])), 'fake_B2A', self.img_size),
+                                                                    RGB2BGR(tensor2numpy(denorm(fake_B2A2B[0])), 'fake_B2A2B', self.img_size)), 0)), 1)
 
                     cv2.imwrite(os.path.join(self.result_dir, self.exp_name, 'img', 'A2B_%07d.png' % step), A2B * 255.0)
                     cv2.imwrite(os.path.join(self.result_dir, self.exp_name, 'img', 'B2A_%07d.png' % step), B2A * 255.0)
